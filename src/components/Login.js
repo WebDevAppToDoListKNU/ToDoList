@@ -49,7 +49,7 @@ function Login() {
 
             if (user) {
                 // 로그인 성공 시 sessionStorage에 사용자 ID 저장
-                sessionStorage.setItem("loggedInUserId", user.id);
+                sessionStorage.setItem("logInUserId", user.id);
                 navigate("/"); // ToDoList로 이동
             } else {
                 setError("아이디 또는 비밀번호가 잘못되었습니다.");

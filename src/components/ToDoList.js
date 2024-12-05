@@ -8,18 +8,14 @@ function ToDoList() {
 
 
     const navigate = useNavigate();
-    const [loggedInUser, setLoggedInUser] = useState(null);
+    const [logInUser, setLogInUser] = useState(null);
     const [todos, setTodos] = useState({});
-    const [folders, setFolders] = useState([
-        { id: 1, name: "개인" },
-        { id: 2, name: "업무" },
-        { id: 3, name: "휴지통" },
-    ]);
+    const [folders, setFolders] = useState([]);
 
     const [favorites, setFavorites] = useState([]);
     const [selectedFolder, setSelectedFolder] = useState(1);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingTodo, setEditingTodo] = useState(null);
+    const [editorOpen, setEditorOpen] = useState(false);
+    const [edit, setEdit] = useState(null);
     const [title, setTitle] = useState("");
     const [content, setContent] = useState("");
     const [newFolderName, setNewFolderName] = useState("");
@@ -30,23 +26,35 @@ function ToDoList() {
 
 
     useEffect(() => {
-        const userId = sessionStorage.getItem("loggedInUserId");
+        const userId = sessionStorage.getItem("logInUserId");
         if (userId) {
             axios.get(`http://localhost:8000/users/${userId}`)
                 .then((response) => {
-                    setLoggedInUser(response.data);
+                    setLogInUser(response.data);
                     setTodos(response.data.todos || {});
                     setFolders(response.data.folders || []);
+                    setFavorites(response.data.favorites || []);
                 })
                 .catch((error) => {
-                    console.error("사용자 정보를 가져오는 데 실패했습니다:", error);
+                    console.error("로딩실패", error);
                 });
         }
     }, []);
 
+    const updateFavorite = (updatedFavorites) => {
+        const userId = logInUser?.id;
+        axios.patch(`http://localhost:8000/users/${userId}`, { favorites: updatedFavorites })
+            .then(() => {
+                console.log("즐찾 업데이트");
+            })
+            .catch((error) => {
+                console.error("즐찾 실패, ", error);
+            });
+    };
+
     const onLogout = () => {
-        sessionStorage.removeItem("loggedInUserId"); // 로그아웃 시 sessionStorage 초기화
-        setLoggedInUser(null);
+        sessionStorage.removeItem("logInUserId");
+        setLogInUser(null);
         navigate("/");
     };
 
@@ -69,37 +77,40 @@ function ToDoList() {
             return;
         }
         const folderTodos = todos[selectedFolder] || [];
-        const userId = loggedInUser?.id;
+        const userId = logInUser?.id;
 
-        if (editingTodo) {
+        
+        const folderId = selectedFolder;  
+
+        if (edit) {
             const updatedTodos = folderTodos.map((todo) =>
-                todo.id === editingTodo.id ? { ...todo, title, content, date: filterDate } : todo
+                todo.id === edit.id ? { ...todo, title, content, date: filterDate, folderId } : todo
             );
             const updatedData = { ...todos, [selectedFolder]: updatedTodos };
             setTodos(updatedData);
 
-            // Update the backend
+            
             axios.patch(`http://localhost:8000/users/${userId}`, { todos: updatedData })
-                .then(() => console.log("Todo updated in backend"))
-                .catch((error) => console.error("Failed to update todo:", error));
+                .then(() => console.log("업데이트 성공"))
+                .catch((error) => console.error("업데이트 에러발생, ", error));
         } else {
             const id = folderTodos.length > 0 ? folderTodos[folderTodos.length - 1].id + 1 : 1;
-            const newTodo = { id, title, content, date: getCurrentDate() };
+            const newTodo = { id, title, content, date: getCurrentDate(), folderId };
             const updatedData = { ...todos, [selectedFolder]: [...folderTodos, newTodo] };
             setTodos(updatedData);
 
-            // Update the backend
             axios.patch(`http://localhost:8000/users/${userId}`, { todos: updatedData })
-                .then(() => console.log("New todo added to backend"))
-                .catch((error) => console.error("Failed to add new todo:", error));
+                .then(() => console.log("메모 쓰기 성공"))
+                .catch((error) => console.error("메모 쓰기 실패, ", error));
         }
-        closeModal();
+        closeEditor();
     };
 
 
 
+
     const addFolder = () => {
-        if (!loggedInUser) {
+        if (!logInUser) {
             alert("로그인 후 폴더를 추가할 수 있습니다.");
             return;
         }
@@ -110,95 +121,137 @@ function ToDoList() {
             setFolders(updatedFolders);
             setNewFolderName("");
 
-            // Update the backend
-            const userId = loggedInUser?.id;
+        
+            const userId = logInUser?.id;
             axios.patch(`http://localhost:8000/users/${userId}`, { folders: updatedFolders })
-                .then(() => console.log("New folder added to backend"))
-                .catch((error) => console.error("Failed to add folder:", error));
+                .then(() => console.log("새폴더 추가 성공"))
+                .catch((error) => console.error("폴더추가 실패, ", error));
         }
     };
-
 
 
     const onDelete = (id) => {
         const folderTodos = todos[selectedFolder];
         const updatedTodos = folderTodos.filter((todo) => todo.id !== id);
-        const todoToDelete = folderTodos.find((todo) => todo.id === id);
+        const todoDelete = folderTodos.find((todo) => todo.id === id);
 
         const updatedData = { ...todos, [selectedFolder]: updatedTodos };
         setTodos(updatedData);
 
-        if (todoToDelete) {
-            const trashTodos = [...(todos[3] || []), { ...todoToDelete, previousFolder: selectedFolder }];
-            setTodos((prev) => ({ ...prev, 3: trashTodos }));
+        //id 충돌 방지ㅣ용~
+        if (todoDelete) {
+            const allTodos = Object.values(todos).flat();
+            const newId = Math.max(0, ...allTodos.map((todo) => todo.id)) + 1;
 
-            // Update the backend
-            const userId = loggedInUser?.id;
-            axios.patch(`http://localhost:8000/users/${userId}`, { todos: { ...updatedData, 3: trashTodos } })
-                .then(() => console.log("Todo moved to trash in backend"))
-                .catch((error) => console.error("Failed to update backend:", error));
+            const trashTodos = [
+                ...(todos[1] || []),
+                { ...todoDelete, id: newId, preFolder: selectedFolder }
+            ];
+            setTodos((prev) => ({ ...prev, 1: trashTodos }));
+
+            const userId = logInUser?.id;
+            axios.patch(`http://localhost:8000/users/${userId}`, { todos: { ...updatedData, 1: trashTodos } })
+                .then(() => console.log("휴지통 이동 성공"))
+                .catch((error) => console.error("휴지통 이동 실패, ", error));
         }
     };
+
+
 
     const onRealDelete = (id) => {
-        const folderTodos = todos[selectedFolder];
-        const updatedTodos = folderTodos.filter((todo) => todo.id !== id);
-        setTodos({ ...todos, [selectedFolder]: updatedTodos });
+        const trashTodos = todos[TRASH_FOLDER_ID];
+        const updatedTodos = trashTodos.filter((todo) => todo.id !== id);
+
+        setTodos((prevState) => ({
+            ...prevState,
+            [TRASH_FOLDER_ID]: updatedTodos,
+        }));
+
+        
+        const userId = logInUser?.id;
+        axios
+            .patch(`http://localhost:8000/users/${userId}`, {
+                todos: {
+                    ...todos,
+                    [TRASH_FOLDER_ID]: updatedTodos,
+                },
+            })
+            .then(() => {
+                console.log("완전삭제 성공");
+            })
+            .catch((error) => {
+                console.error("완전삭제 실패, ", error);
+            });
     };
 
-    const TRASH_FOLDER_ID = 3;
 
+
+    const TRASH_FOLDER_ID = 1;
+//복원로직임
     const restoreTodo = (id) => {
         const trashTodos = todos[TRASH_FOLDER_ID];
-        const todoToRestore = trashTodos.find((todo) => todo.id === id);
+        const todoRestore = trashTodos.find((todo) => todo.id === id);
+        const updatedTrashTodos = trashTodos.filter((todo) => todo.id !== id);
 
-        if (todoToRestore) {
-            const originalFolder = todoToRestore.previousFolder || 1;
-            setTodos((prevState) => {
-                const updatedTrashTodos = trashTodos.filter((todo) => todo.id !== id);
-                const updatedOriginalFolderTodos = [
-                    ...prevState[originalFolder],
-                    { ...todoToRestore, date: filterDate },
-                ];
-                return {
-                    ...prevState,
-                    [TRASH_FOLDER_ID]: updatedTrashTodos,
-                    [originalFolder]: updatedOriginalFolderTodos,
-                };
-            });
+        if (todoRestore) {
+            const restoredFolder = todoRestore.preFolder;
+            const updatedFolderTodos = [...(todos[restoredFolder] || []), { ...todoRestore, preFolder: undefined }];
+
+            
+            const updatedData = {
+                ...todos,
+                [TRASH_FOLDER_ID]: updatedTrashTodos,
+                [restoredFolder]: updatedFolderTodos
+            };
+            setTodos(updatedData);
+
+
+            const userId = logInUser?.id;
+            axios.patch(`http://localhost:8000/users/${userId}`, { todos: updatedData })
+                .then(() => console.log("복원성공"))
+                .catch((error) => console.error("복원실패, ", error));
         }
     };
 
-    const toggleFavorite = (todoId) => {
-        setFavorites((prev) =>
-            prev.includes(todoId)
-                ? prev.filter((id) => id !== todoId)
-                : [...prev, todoId]
-        );
+
+    const toggleFavorite = (todoId, folderId) => {
+        const isFavorite = favorites.some((item) => item.todoId === todoId && item.folderId === folderId);
+
+        let updatedFavorites;
+        if (isFavorite) {
+            updatedFavorites = favorites.filter((item) => item.todoId !== todoId || item.folderId !== folderId);
+        } else {
+            updatedFavorites = [...favorites, { todoId, folderId }];
+        }
+
+        setFavorites(updatedFavorites);
+        updateFavorite(updatedFavorites); 
     };
 
-    const openModal = (todo = null) => {
-        if (!loggedInUser) {
+
+
+    const openEditor = (todo = null) => {
+        if (!logInUser) {
             alert("로그인 후 이용할 수 있습니다.");
             return;
         }
-        setIsModalOpen(true);
+        setEditorOpen(true);
         if (todo) {
-            setEditingTodo(todo);
+            setEdit(todo);
             setTitle(todo.title);
             setContent(todo.content);
             setFilterDate(todo.date);
         } else {
-            setEditingTodo(null);
+            setEdit(null);
             setTitle("");
             setContent("");
             setFilterDate("");
         }
     };
 
-    const closeModal = () => {
-        setIsModalOpen(false);
-        setEditingTodo(null);
+    const closeEditor = () => {
+        setEditorOpen(false);
+        setEdit(null);
         setTitle("");
         setContent("");
         setSummary("");
@@ -233,47 +286,83 @@ function ToDoList() {
         setContent(summary);
     };
 
+    const onDeleteFolder = (folderId) => {
+        if (folderId === 1) {
+            alert("휴지통 폴더는 삭제할 수 없습니다.");
+            return;
+        }
+
+        const updatedFolders = folders.filter((folder) => folder.id !== folderId);
+        const updatedTodos = { ...todos };
+
+        delete updatedTodos[folderId];
+        setFolders(updatedFolders);
+        setTodos(updatedTodos);
+
+        const userId = logInUser?.id;
+        axios.patch(`http://localhost:8000/users/${userId}`, {
+            folders: updatedFolders,
+            todos: updatedTodos,
+        })
+            .then(() => console.log("폴더삭제 완"))
+            .catch((error) => console.error("폴더삭제 실패, ", error));
+    };
+
     return (
         <div style={{ display: "flex", height: "100vh" }}>
-            {/* 폴더 리스트 */}
             <div
                 style={{
-                    width: "300px",
+                    width: "250px",
                     borderRight: "2px solid #ccc",
                     padding: 10,
                     boxSizing: "border-box",
                 }}
             >
                 <h2>ToDoList</h2>
-                {loggedInUser && (
-                    <p>안녕하세요, {loggedInUser.userId}님!</p>
+                {logInUser && (
+                    <p>안녕하세요, {logInUser.userId}님!</p>
                 )}
-                {loggedInUser ? (
-                    <button onClick={onLogout}>로그아웃</button>
+                {logInUser ? (
+                    <button onClick={onLogout}
+                        style={{ marginRight: 15 }}>로그아웃</button>
                 ) : (
-                    <button onClick={() => navigate("/login")}>로그인</button>
+                    <button onClick={() => navigate("/login")}
+                        style={{ marginRight: 15 }}>로그인</button>
                 )}
 
-                <button
-                    onClick={() => openModal()}>
+                {selectedFolder !== 1 && (<button
+                    onClick={() => openEditor()}>
                     메모 쓰기
-                </button>
+                </button>)}
 
                 <ul style={{ listStyle: "none", padding: 0 }}>
-                    {loggedInUser ? (
+                    {logInUser ? (
                         folders.map((folder) => (
                             <li
                                 key={folder.id}
                                 onClick={() => setSelectedFolder(folder.id)}
                                 style={{
-                                    cursor: "pointer",
+                                    display: "flex",       
+                                    justifyContent: "space-between", 
+                                    alignItems: "center",    
                                     fontWeight: selectedFolder === folder.id ? "bold" : "normal",
                                     backgroundColor: selectedFolder === folder.id ? "#e0e0e0" : "transparent",
                                     padding: "5px",
                                     borderRadius: "4px",
                                 }}
                             >
-                                {folder.name}
+                                <span>{folder.name}</span> 
+
+    
+                                {folder.id !== 1 && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onDeleteFolder(folder.id);
+                                        }}>
+                                        삭제
+                                    </button>
+                                )}
                             </li>
                         ))
                     ) : (
@@ -281,53 +370,69 @@ function ToDoList() {
                     )}
                 </ul>
 
+
                 <div>
                     <input
                         type="text"
                         value={newFolderName}
                         onChange={(e) => setNewFolderName(e.target.value)}
                         placeholder="새 폴더 이름"
+                        style={{ marginRight: 10 }}
                     />
                     <button onClick={addFolder}>폴더 추가</button>
                 </div>
-                <h3>{folders.find((folder) => folder.id === selectedFolder)?.name} 폴더 즐겨찾기</h3>
-                {favorites.map((id) => {
-                    const note = todos[selectedFolder]?.find((todo) => todo.id === id);
-                    return note ? (
-                        <div key={id} onClick={() => openModal(note)}>
-                            {note.title}
-                        </div>
-                    ) : null;
-                })}
+                {logInUser && selectedFolder !== 1 && (
+                    <h3>
+                        {folders.find((folder) => folder.id === selectedFolder)?.name} 폴더 즐겨찾기
+                    </h3>
+                )}
+                {logInUser &&
+                    favorites.map(({ todoId, folderId }) => {
+                        if (folderId !== selectedFolder || folderId === 1) return null;
+
+                        const note = todos[selectedFolder]?.find((todo) => todo.id === todoId);
+                        return note ? (
+                            <div key={todoId} onClick={() => openEditor(note)}>
+                                {note.title}
+                            </div>
+                        ) : null;
+                    })}
+
+
             </div>
 
-            {/* 메모 영역 */}
+            {/* 메모 영역------------------------------------------------ */}
             <div style={{ flex: 1, padding: 20 }}>
                 <h2>{folders.find((folder) => folder.id === selectedFolder)?.name}</h2>
-                <input
-                    type="text"
-                    placeholder="검색 (제목/내용)"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    style={{
-                        width: "100%",
-                        padding: 10,
-                        marginBottom: 20,
-                        boxSizing: "border-box",
-                    }}
-                />
-                <input
-                    type="date"
-                    value={filterDate}
-                    onChange={(e) => setFilterDate(e.target.value)}
+                <div>
 
-                />
-                <button onClick={() => setSortOrder(sortOrder === "latest" ? "oldest" : "latest")}
-                    style={{
-                        cursor: "pointer"
-                    }}>
-                    {sortOrder === "latest" ? "최신순" : "오래된 순"}
-                </button>
+
+
+                    <input
+                        type="text"
+                        placeholder="검색 (제목/내용)"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        style={{
+                            width: "30%",
+                            padding: 10,
+                            marginBottom: 20,
+                            boxSizing: "border-box",
+                        }}
+                    />
+                </div>
+                <div style={{ marginBottom: 15 }}>
+                    <input
+                        type="date"
+                        value={filterDate}
+                        onChange={(e) => setFilterDate(e.target.value)}
+                        style={{ marginRight: 10 }}
+
+                    />
+                    <button onClick={() => setSortOrder(sortOrder === "latest" ? "oldest" : "latest")}>
+                        {sortOrder === "latest" ? "최신순" : "오래된 순"}
+                    </button>
+                </div>
                 <div
                     style={{
                         display: "grid",
@@ -335,7 +440,7 @@ function ToDoList() {
                         gap: 20,
                     }}
                 >
-                    {loggedInUser ? (
+                    {logInUser ? (
                         filteredTodos.map((todo) => (
                             <div
                                 key={todo.id}
@@ -347,45 +452,43 @@ function ToDoList() {
                                 }}
                             >
                                 <h3
-                                    onClick={() => openModal(todo)}
-                                    style={{
-                                        cursor: "pointer"
-                                    }}>
+                                    onClick={() => openEditor(todo)}>
                                     {todo.title}
                                 </h3>
-                                <p style={{ fontSize: 14, color: "#555" }}>{todo.content}</p>
+                                <p style={{ fontSize: 14, color: "#555" }}>
+                                    {todo.content.length > 20 ? todo.content.slice(0, 20) + '...' : todo.content}
+                                </p>
+
+
                                 <p>{todo.date}</p>
 
-                                <button onClick={() => toggleFavorite(todo.id)}
-                                    style={{
-                                        cursor: "pointer"
-                                    }}>
-                                    {favorites.includes(todo.id) ? "★" : "☆"}
-                                </button>
-                                {selectedFolder !== 3 && (
-                                    <button onClick={() => onDelete(todo.id)}
-                                        style={{
-                                            cursor: "pointer"
-                                        }}>
-                                        삭제
-                                    </button>)}
-                                {selectedFolder === 3 && (
-                                    <button
-                                        onClick={() => restoreTodo(todo.id)}
-                                        style={{
-                                            cursor: "pointer"
-                                        }}>
-                                        복원
-                                    </button>
-                                )}
-                                {selectedFolder === 3 && (
-                                    <button onClick={() => onRealDelete(todo.id)}
-                                        style={{
-                                            cursor: "pointer"
-                                        }}>
-                                        완전 삭제
-                                    </button>
-                                )}
+                                <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                                    {selectedFolder !== 1 && (
+                                        <button onClick={() => toggleFavorite(todo.id, todo.folderId)}>
+                                            {favorites.some((item) => item.todoId === todo.id && item.folderId === todo.folderId) ? "★" : "☆"}
+                                        </button>)}
+                                    {selectedFolder !== 1 && (
+                                        <button onClick={() => onDelete(todo.id)}>
+                                            삭제
+                                        </button>
+                                    )}
+                                </div>
+
+
+
+                                <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                                    {selectedFolder === 1 && (
+                                        <button
+                                            onClick={() => restoreTodo(todo.id)}>
+                                            복원
+                                        </button>
+                                    )}
+                                    {selectedFolder === 1 && (
+                                        <button onClick={() => onRealDelete(todo.id)}>
+                                            완전 삭제
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         ))
                     ) : (
@@ -395,7 +498,7 @@ function ToDoList() {
                 </div>
             </div>
 
-            {isModalOpen && (
+            {editorOpen && (
                 <div
                     style={{
                         position: "fixed",
@@ -414,10 +517,7 @@ function ToDoList() {
                             borderRadius: 10,
                         }}>
                         <button
-                            onClick={closeModal}
-                            style={{
-                                cursor: "pointer"
-                            }}>
+                            onClick={closeEditor}>
                             ✕
                         </button>
                         <div style={{ padding: 10 }}>
@@ -448,29 +548,20 @@ function ToDoList() {
                             ></textarea>
 
                             <button
-                                onClick={fetchSummary}
-                                style={{
-                                    cursor: "pointer"
-                                }}>
+                                onClick={fetchSummary}>
                                 GPT 내용 요약
                             </button>
                             {summary && (
                                 <div>
                                     <p>{summary}</p>
                                     <button
-                                        onClick={updateTodoContent}
-                                        style={{
-                                            cursor: "pointer"
-                                        }}>
+                                        onClick={updateTodoContent}>
                                         변경하기
                                     </button>
                                 </div>
                             )}
                             <button
-                                onClick={onAddOrUpdate}
-                                style={{
-                                    cursor: "pointer"
-                                }}>
+                                onClick={onAddOrUpdate}>
                                 저장
                             </button>
                         </div>
@@ -482,3 +573,4 @@ function ToDoList() {
 }
 
 export default ToDoList;
+

@@ -49,6 +49,12 @@ function Join() {
                         const newUser = {
                             id: (maxId + 1).toString(),
                             ...formData,
+                            folders: [
+                                {
+                                    id: 1,
+                                    name: "휴지통",
+                                },
+                            ],
                         };
 
                         axios.post('http://localhost:8000/users', newUser)
