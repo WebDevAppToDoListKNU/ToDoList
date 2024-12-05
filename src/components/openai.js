@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_KEY = process.env.REACT_APP_OPENAPI_KEY2
+const API_KEY = process.env.OPENAPI_KEY
 console.log(API_KEY)
 
 const chat = async (prompt, onMessage) => {

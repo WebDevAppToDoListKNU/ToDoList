@@ -3,39 +3,25 @@ import { useNavigate } from "react-router-dom";
 
 function Login() {
     const [formData, setFormData] = useState({ userId: "", password: "" });
-    const [errors, setErrors] = useState({ userId: "", password: "" });
+    const [errors, setErrors] = useState({});
     const [error, setError] = useState("");
     const navigate = useNavigate();
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData({
-            ...formData,
-            [name]: value,
-        });
-        // Reset individual error if necessary
-        setErrors({
-            ...errors,
-            [name]: "",
-        });
+        setFormData({ ...formData, [name]: value });
+        setErrors((prevErrors) => ({ ...prevErrors, [name]: "" }));
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // Basic validation
-        if (!formData.userId) {
-            setErrors((prevErrors) => ({
-                ...prevErrors,
-                userId: "아이디를 입력해 주세요.",
-            }));
-            return;
-        }
-        if (!formData.password) {
-            setErrors((prevErrors) => ({
-                ...prevErrors,
-                password: "비밀번호를 입력해 주세요.",
-            }));
+        const newErrors = {};
+        if (!formData.userId) newErrors.userId = "아이디를 입력해 주세요.";
+        if (!formData.password) newErrors.password = "비밀번호를 입력해 주세요.";
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
             return;
         }
 
@@ -48,14 +34,12 @@ function Login() {
             );
 
             if (user) {
-                // 로그인 성공 시 sessionStorage에 사용자 ID 저장
                 sessionStorage.setItem("logInUserId", user.id);
-                navigate("/"); // ToDoList로 이동
+                navigate("/");
             } else {
                 setError("아이디 또는 비밀번호가 잘못되었습니다.");
             }
-        } catch (error) {
-            console.error("로그인 실패:", error);
+        } catch {
             setError("서버에 연결할 수 없습니다. 다시 시도해주세요.");
         }
     };
@@ -76,7 +60,6 @@ function Login() {
                     />
                     {errors.userId && <span style={{ color: 'red' }}>{errors.userId}</span>}
                 </div>
-
                 <div>
                     <label htmlFor="password">비밀번호:</label>
                     <input
@@ -89,7 +72,6 @@ function Login() {
                     />
                     {errors.password && <span style={{ color: 'red' }}>{errors.password}</span>}
                 </div>
-
                 <button type="submit" style={{ marginTop: '1rem' }}>로그인</button>
                 <button
                     type="button"

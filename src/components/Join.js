@@ -3,43 +3,30 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 function Join() {
-    const [formData, setFormData] = useState({
-        userId: '',
-        password: '',
-    });
+    const [formData, setFormData] = useState({ userId: "", password: "" });
 
     const [error, setErrors] = useState({});
     const navigate = useNavigate();
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData({
-            ...formData,
-            [name]: value,
-        });
+        setFormData({ ...formData, [name]: value });
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        let validationErrors = {};
+        const validationErrors = {};
 
-        if (!formData.userId) {
-            validationErrors.userId = '아이디를 입력하세요.';
-        }
-        if (!formData.password) {
-            validationErrors.password = '비밀번호를 입력하세요.';
-        }
+        if (!formData.userId) validationErrors.userId = '아이디를 입력하세요.';
+        if (!formData.password) validationErrors.password = '비밀번호를 입력하세요.';
 
         setErrors(validationErrors);
 
         if (Object.keys(validationErrors).length === 0) {
             axios
                 .get('http://localhost:8000/users')
-                .then((result) => {
-                    const users = result.data;
-                    const userExists = users.some((user) => user.userId === formData.userId);
-
-                    if (userExists) {
+                .then(({ data: users }) => {
+                    if (users.some((user) => user.userId === formData.userId)) {
                         setErrors({ userId: '이미 존재하는 아이디입니다.' });
                     } else {
                         const maxId = users.length > 0
@@ -49,12 +36,7 @@ function Join() {
                         const newUser = {
                             id: (maxId + 1).toString(),
                             ...formData,
-                            folders: [
-                                {
-                                    id: 1,
-                                    name: "휴지통",
-                                },
-                            ],
+                            folders: [{ id: 1, name: "휴지통" }],
                         };
 
                         axios.post('http://localhost:8000/users', newUser)
@@ -62,10 +44,10 @@ function Join() {
                                 alert('회원가입이 완료되었습니다.');
                                 navigate('/login');
                             })
-                            .catch((err) => console.error(err));
+                            .catch(console.error);
                     }
                 })
-                .catch((err) => console.error(err));
+                .catch(console.error);
         }
     };
 
